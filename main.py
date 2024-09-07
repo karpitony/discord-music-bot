@@ -17,6 +17,7 @@ class MyBot(commands.AutoShardedBot):
 
     async def setup_hook(self):
         await self.load_extension("commands.default")
+        await self.load_extension("commands.music")
         # 명령어들 commands/ 폴더에 만들고 여기에 부르기
         
         self.tree.copy_global_to(guild=GUILD)
