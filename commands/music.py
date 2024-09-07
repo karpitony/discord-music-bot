@@ -58,9 +58,11 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
         filename = data['url'] if stream else ytdl.prepare_filename(data)
 
-        # ffmpeg_options를 사용하여 FFmpegPCMAudio 호출
-        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data, filename=None if stream else filename)
-    
+        # ffmpeg_options가 None이 아닌 경우에만 전달
+        if ffmpeg_options:
+            return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data, filename=None if stream else filename)
+        else:
+            return cls(discord.FFmpegPCMAudio(filename), data=data, filename=None if stream else filename)   
     # 파일 삭제 메서드
     def cleanup(self):
         if self.filename:
@@ -74,14 +76,17 @@ class YTDLSource(discord.PCMVolumeTransformer):
 class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.song_queue = []  # 대기열 저장
+        # 대기열 저장, 곡 제목, URL, 스트리밍 여부를 저장하는 튜플 리스트 [(title, url, stream)]
+        self.song_queue = []  
         self.current_player = None  # 현재 재생 중인 플레이어
 
     async def play_next(self, voice_client):
         """대기열에서 다음 곡을 재생하는 함수"""
         if self.song_queue:
-            next_song = self.song_queue.pop(0)
-            voice_client.play(next_song, after=lambda e: self.play_next(voice_client))
+            next_song_title, next_song_url, is_stream = self.song_queue.pop(0)
+            await self.play_with_retries(None, next_song_url, stream=is_stream)
+        else:
+            self.current_player = None  # 대기열이 비었을 경우 현재 재생 중인 곡을 None으로 설정
 
     async def play_with_retries(self, interaction, url, stream=False, max_retries=3):
         """오류 발생 시 자동 재시도를 수행하는 재생 함수"""
@@ -89,7 +94,10 @@ class Music(commands.Cog):
         voice_client = interaction.guild.voice_client
 
         if voice_client.is_playing():
-            await interaction.followup.send("현재 오디오가 재생 중입니다. 재생이 끝난 후 다시 시도하세요.")
+            # 곡이 재생 중일 때 대기열에 추가 (제목, URL, 스트리밍 여부 저장)
+            player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=stream)
+            self.song_queue.append((player.title, url, stream))  # 제목과 URL, 스트리밍 여부 저장
+            await interaction.followup.send(f"현재 곡이 재생 중입니다. 대기열에 추가되었습니다: {player.title}")
             return
 
         while retries < max_retries:
@@ -100,14 +108,10 @@ class Music(commands.Cog):
                 # 선택한 ffmpeg_options를 from_url에 전달
                 player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=stream, ffmpeg_options=ffmpeg_options)
 
-                if not stream and player.filename:
-                    print(f"Playing from downloaded file: {player.filename}")
-                    voice_client.play(discord.FFmpegPCMAudio(player.filename, **ffmpeg_options), 
-                                    after=lambda e: self._after_playback_cleanup(e))
-                else:
-                    voice_client.play(discord.FFmpegPCMAudio(player.filename, **ffmpeg_options), 
-                                    after=lambda e: self._after_playback_cleanup(e))
-                
+                # 곡이 끝난 후 다음 곡을 재생하도록 설정
+                voice_client.play(discord.FFmpegPCMAudio(player.filename, **ffmpeg_options), 
+                                  after=lambda e: asyncio.run_coroutine_threadsafe(self.play_next(voice_client), self.bot.loop))
+
                 self.current_player = player
                 await interaction.followup.send(f"Now playing: {player.title}")
                 return
@@ -149,7 +153,7 @@ class MusicCommands(commands.Cog):
 
     @app_commands.command(name="yt", description="YouTube URL에서 음악을 재생합니다.")
     async def yt(self, interaction: discord.Interaction, url: str):
-        """YouTube URL에서 음악을 재생하는 명령어"""
+        """YouTube URL에서 음악을 재생하는 명령어 (다운로드 후 재생)"""
         voice_client = interaction.guild.voice_client
         if voice_client is None:
             channel = interaction.user.voice.channel
@@ -157,15 +161,11 @@ class MusicCommands(commands.Cog):
             voice_client = interaction.guild.voice_client
 
         await interaction.response.defer()
-        await self.music_cog.play_with_retries(interaction, url)
+        await self.music_cog.play_with_retries(interaction, url, stream=False)
 
     @app_commands.command(name="stream", description="YouTube URL에서 스트리밍을 재생합니다.")
     async def stream(self, interaction: discord.Interaction, url: str):
-        """YouTube 스트리밍 명령어"""
-        if interaction.user.voice is None:
-            await interaction.response.send_message("먼저 음성 채널에 들어가 주세요.")
-            return
-
+        """YouTube 스트리밍 명령어 (스트리밍)"""
         voice_client = interaction.guild.voice_client
         if voice_client is None:
             channel = interaction.user.voice.channel
@@ -174,7 +174,7 @@ class MusicCommands(commands.Cog):
 
         await interaction.response.defer()
         await self.music_cog.play_with_retries(interaction, url, stream=True)
-
+        
     @app_commands.command(name="skip", description="현재 재생 중인 곡을 건너뜁니다.")
     async def skip(self, interaction: discord.Interaction):
         """현재 재생 중인 곡을 건너뛰는 명령어"""
@@ -192,7 +192,8 @@ class MusicCommands(commands.Cog):
         if not self.music_cog.song_queue:
             await interaction.response.send_message("대기열에 노래가 없습니다.")
         else:
-            playlist_str = "\n".join(f"{idx + 1}. {song.title}" for idx, song in enumerate(self.music_cog.song_queue))
+            # 대기열에 저장된 제목을 표시
+            playlist_str = "\n".join(f"{idx + 1}. {song[0]}" for idx, song in enumerate(self.music_cog.song_queue))
             await interaction.response.send_message(f"현재 대기열:\n{playlist_str}")
 
     @app_commands.command(name="stop", description="현재 재생 중인 노래를 멈춥니다.")
