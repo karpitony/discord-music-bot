@@ -20,10 +20,11 @@ ytdl_format_options = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',  # bind to ipv4 since ipv6 addresses cause issues sometimes
-    'retries': 5,
+    'retries': 5,  # 자동 재시도 설정
 }
 
 ffmpeg_options = {
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
     'options': '-vn',
 }
 
@@ -40,7 +41,11 @@ class YTDLSource(discord.PCMVolumeTransformer):
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
         loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+        try:
+            data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+        except Exception as e:
+            print(f"Error extracting URL info: {e}")
+            raise
 
         if 'entries' in data:
             # take first item from a playlist
@@ -81,6 +86,24 @@ class Music(commands.Cog):
 
         await interaction.response.send_message(f"봇이 {channel.name}에 연결되었습니다.")
 
+    async def play_with_retries(self, interaction, url, stream=False, max_retries=3):
+        """음악 재생 중 실패 시 재시도를 구현하는 함수"""
+        retries = 0
+        while retries < max_retries:
+            try:
+                player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=stream)
+                voice_client = interaction.guild.voice_client
+                voice_client.play(player, after=lambda e: self._after_playback_cleanup(e))
+                self.current_player = player
+                await interaction.followup.send(f"Now playing: {player.title}")
+                return
+            except Exception as e:
+                retries += 1
+                print(f"Error playing {url}: {e}. Retrying ({retries}/{max_retries})...")
+                await asyncio.sleep(3)  # 재시도 전에 약간의 지연
+
+        await interaction.followup.send("스트리밍 중 오류가 발생했고, 최대 재시도 횟수를 초과했습니다.")
+
     @app_commands.command(name="yt", description="YouTube URL에서 음악을 재생합니다.")
     async def yt(self, interaction: discord.Interaction, url: str):
         """YouTube URL에서 음악을 재생하는 슬래시 명령어"""
@@ -92,14 +115,8 @@ class Music(commands.Cog):
 
         await interaction.response.defer()
 
-        async with interaction.channel.typing():
-            try:
-                player = await YTDLSource.from_url(url, loop=self.bot.loop)
-                self.current_player = player  # 현재 재생 중인 플레이어 설정
-                voice_client.play(player, after=lambda e: self._after_playback_cleanup(e))
-                await interaction.followup.send(f"Now playing: {player.title}")
-            except Exception as e:
-                await interaction.followup.send(f"Error: {str(e)}")
+        # 스트리밍 오류가 발생하면 재시도하는 로직 추가
+        await self.play_with_retries(interaction, url)
 
     @app_commands.command(name="stream", description="YouTube URL에서 스트리밍을 재생합니다.")
     async def stream(self, interaction: discord.Interaction, url: str):
@@ -119,14 +136,8 @@ class Music(commands.Cog):
         # 응답을 미리 예약
         await interaction.response.defer()
 
-        async with interaction.channel.typing():
-            try:
-                player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=True)
-                self.current_player = player  # 현재 재생 중인 플레이어 설정
-                voice_client.play(player, after=lambda e: self._after_playback_cleanup(e))
-                await interaction.followup.send(f"Now playing: {player.title}")
-            except Exception as e:
-                await interaction.followup.send(f"Error: {str(e)}")
+        # 스트리밍 오류가 발생하면 재시도하는 로직 추가
+        await self.play_with_retries(interaction, url, stream=True)
 
     # 대기열 및 플레이어 종료 후 파일 삭제 처리
     def _after_playback_cleanup(self, error):
