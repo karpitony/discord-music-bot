@@ -5,6 +5,7 @@ import aiohttp
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from services import setup
 
 class MyBot(commands.AutoShardedBot):
     def __init__(self):
@@ -36,6 +37,7 @@ class MyBot(commands.AutoShardedBot):
         return await super().on_command_error(context, exception)
     
 if __name__=="__main__":
+    setup()
     load_dotenv()
     GUILD = discord.Object(id=os.getenv("TEST_GUILD_ID"))
     
