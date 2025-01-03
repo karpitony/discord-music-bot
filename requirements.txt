@@ -1,5 +1,5 @@
 discord
 python-dotenv
-
+aiohttp
 yt-dlp
 PyNaCl
