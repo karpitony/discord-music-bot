@@ -1,4 +1,5 @@
 import discord
+import asyncio
 from discord.ext import commands
 from discord import app_commands
 from services import MusicPlayer
@@ -55,9 +56,12 @@ class MusicCommands(commands.Cog):
             await interaction.response.send_message("현재 재생 중인 곡이 없습니다.")
             return
 
-        voice_client.stop()  # 현재 곡 중단
-        await self.music_cog.play_next(voice_client)  # 다음 곡 재생
-        await interaction.response.send_message("현재 곡을 건너뛰었습니다.")
+        await interaction.response.send_message("현재 곡을 건너뛰고 있습니다...")
+        voice_client.stop()  # 현재 곡 중지
+
+        # 다음 곡 재생
+        await self.music_cog.play_next(voice_client)
+        await interaction.followup.send("곡을 건너뛰었습니다.")
 
     @app_commands.command(name="playlist", description="대기열 표시")
     async def playlist(self, interaction: discord.Interaction):

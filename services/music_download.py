@@ -2,16 +2,14 @@ import os
 import time
 import asyncio
 import discord
-import yt_dlp as youtube_dl
+from yt_dlp import YoutubeDL
 
 if not os.path.exists('music'):
     os.makedirs('music')
 
-# YouTube 다운로드 및 재생 설정
-youtube_dl.utils.bug_reports_message = lambda: ''
 ytdl_format_options = {
     'format': 'bestaudio/best',
-    'outtmpl': 'music/%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'outtmpl': 'music/%(extractor)s-%(id)s-%(title)s-%(epoch)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': True,
     'nocheckcertificate': True,
@@ -20,24 +18,12 @@ ytdl_format_options = {
     'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
-    'source_address': '0.0.0.0',
-    'retries': 5,
 }
 ffmpeg_options = {'options': '-vn'}
 
-ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
-
-# 유틸리티 함수
-def is_file_in_use(filepath):
-    """파일이 점유 중인지 확인"""
-    try:
-        with open(filepath, 'r+'):
-            return False  # 파일이 점유되지 않음
-    except IOError:
-        return True  # 파일이 점유 중
+ytdl = YoutubeDL(ytdl_format_options)
 
 
-# YTDLSource 클래스
 class YTDLSource(discord.PCMVolumeTransformer):
     def __init__(self, source, *, data, volume=0.5, filename=None):
         super().__init__(source, volume)
@@ -48,7 +34,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
-        """YouTube URL에서 파일을 다운로드"""
         loop = loop or asyncio.get_event_loop()
         try:
             data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
@@ -59,40 +44,25 @@ class YTDLSource(discord.PCMVolumeTransformer):
         if 'entries' in data:
             data = data['entries'][0]
 
-        filename = data['url'] if stream else ytdl.prepare_filename(data)
+        filename = ytdl.prepare_filename(data)
+        if os.path.exists(filename):
+            print(f"File already exists: {filename}")
+        else:
+            print(f"Downloading new file: {filename}")
+
         source = discord.FFmpegPCMAudio(filename, **ffmpeg_options)
         return cls(source, data=data, filename=filename)
 
     def cleanup(self):
-        """파일 삭제"""
-        if self.filename:
-            # FFmpeg 프로세스가 존재하면 종료 시도
-            try:
-                if hasattr(self, '_process'):
-                    ffmpeg_process = self._process
-                    if ffmpeg_process and ffmpeg_process.poll() is None:
-                        print("Terminating FFmpeg process...")
-                        ffmpeg_process.terminate()
-                        ffmpeg_process.wait(timeout=5)  # 최대 5초 대기
-                        print("FFmpeg process terminated successfully.")
-            except Exception as e:
-                print(f"Error terminating FFmpeg process: {e}")
-
-            # 파일 삭제 시도
-            for attempt in range(5):
-                if not os.path.exists(self.filename):  # 파일 존재 여부 확인
-                    print(f"File already deleted: {self.filename}")
+        """Clean up and delete the file."""
+        if self.filename and os.path.exists(self.filename):
+            for _ in range(5):
+                try:
+                    os.remove(self.filename)
+                    print(f"Deleted file: {self.filename}")
                     break
-
-                if not is_file_in_use(self.filename):
-                    try:
-                        os.remove(self.filename)
-                        print(f"Deleted file: {self.filename}")
-                        break
-                    except Exception as e:
-                        print(f"Failed to delete file {self.filename}: {e}")
-                else:
-                    print(f"File {self.filename} is in use. Retrying ({attempt + 1}/5)...")
-                    time.sleep(2)
+                except PermissionError:
+                    print(f"File {self.filename} is in use. Retrying...")
+                    time.sleep(1)
             else:
-                print(f"Failed to delete file after retries: {self.filename}")
+                print(f"Failed to delete file: {self.filename}")
