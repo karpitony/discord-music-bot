@@ -93,6 +93,7 @@ class MusicPlayer(commands.Cog):
                     time.sleep(0.5)  # FFmpeg가 파일을 해제할 시간을 줌
                     os.remove(filename)
                     print(f"[cleanup_file] Deleted file: {filename}")
+                    self.current_player = None
                     break
                 except PermissionError:
                     print(f"[Attempt {attempt+1}] File {filename} is in use. Retrying...")

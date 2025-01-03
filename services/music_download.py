@@ -1,11 +1,7 @@
-import os
-import time
 import asyncio
 import discord
 from yt_dlp import YoutubeDL
 
-if not os.path.exists('music'):
-    os.makedirs('music')
 
 ytdl_format_options = {
     'format': 'bestaudio/best',
@@ -48,9 +44,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
 
         filename = ytdl.prepare_filename(data)
-        if os.path.exists(filename):
-            print(f"File already exists and will be reused: {filename}")
-        else:
-            print(f"Downloading new file: {filename}")
+        print(f"[YTDLSource] Downloading file: {filename}")
         source = discord.FFmpegPCMAudio(filename, **ffmpeg_options)
         return cls(source, data=data, filename=filename)
