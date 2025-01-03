@@ -57,10 +57,11 @@ class MusicCommands(commands.Cog):
             return
 
         await interaction.response.send_message("현재 곡을 건너뛰고 있습니다...")
-        voice_client.stop()  # 현재 곡 중지
 
-        # 다음 곡 재생
-        # await self.music_cog.play_next(voice_client)
+        if hasattr(self.music_cog, 'skip_song'):
+            self.music_cog.skip_song(voice_client)
+
+        # 곡 건너뛰기 완료 메시지
         await interaction.followup.send("곡을 건너뛰었습니다.")
 
     @app_commands.command(name="playlist", description="대기열 표시")
