@@ -19,7 +19,9 @@ ytdl_format_options = {
     'no_warnings': True,
     'default_search': 'auto',
 }
-ffmpeg_options = {'options': '-vn'}
+ffmpeg_options = {
+    'options': '-vn -loglevel debug'
+}
 
 ytdl = YoutubeDL(ytdl_format_options)
 
@@ -44,25 +46,11 @@ class YTDLSource(discord.PCMVolumeTransformer):
         if 'entries' in data:
             data = data['entries'][0]
 
+
         filename = ytdl.prepare_filename(data)
         if os.path.exists(filename):
-            print(f"File already exists: {filename}")
+            print(f"File already exists and will be reused: {filename}")
         else:
             print(f"Downloading new file: {filename}")
-
         source = discord.FFmpegPCMAudio(filename, **ffmpeg_options)
         return cls(source, data=data, filename=filename)
-
-    def cleanup(self):
-        """Clean up and delete the file."""
-        if self.filename and os.path.exists(self.filename):
-            for _ in range(5):
-                try:
-                    os.remove(self.filename)
-                    print(f"Deleted file: {self.filename}")
-                    break
-                except PermissionError:
-                    print(f"File {self.filename} is in use. Retrying...")
-                    time.sleep(1)
-            else:
-                print(f"Failed to delete file: {self.filename}")

@@ -60,7 +60,7 @@ class MusicCommands(commands.Cog):
         voice_client.stop()  # 현재 곡 중지
 
         # 다음 곡 재생
-        await self.music_cog.play_next(voice_client)
+        # await self.music_cog.play_next(voice_client)
         await interaction.followup.send("곡을 건너뛰었습니다.")
 
     @app_commands.command(name="playlist", description="대기열 표시")
