@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from services import YTDLSource, MusicPlayer
+from services import MusicPlayer
 
 # MusicCommands Cog
 class MusicCommands(commands.Cog):
@@ -36,19 +36,18 @@ class MusicCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            player = await YTDLSource.from_url(url, loop=self.bot.loop)
+            title = await self.music_cog.queue_song(url)  # 대기열에 추가
         except Exception as e:
-            await interaction.followup.send(f"노래를 다운로드하는 중 오류가 발생했습니다: {e}")
+            await interaction.followup.send(f"노래를 추가하는 중 오류가 발생했습니다: {e}")
             return
 
-        if voice_client.is_playing():
-            self.music_cog.song_queue.append((player.title, url))
-            await interaction.followup.send(f"대기열에 추가되었습니다: {player.title}")
+        if not voice_client.is_playing() and not self.music_cog.current_player:
+            await self.music_cog.play_song(voice_client)  # 곡 재생
+            await interaction.followup.send(f"Now playing: {title}")
         else:
-            await self.music_cog.play_song(voice_client, url)
-            await interaction.followup.send(f"Now playing: {player.title}")
+            await interaction.followup.send(f"대기열에 추가되었습니다: {title}")
 
-    @app_commands.command(name="skip", description="현재 곡 건너뛰기")
+    @app_commands.command(name="skip", description="현재 재생 중인 곡을 건너뜁니다.")
     async def skip(self, interaction: discord.Interaction):
         """현재 곡 건너뛰기"""
         voice_client = interaction.guild.voice_client

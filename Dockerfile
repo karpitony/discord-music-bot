@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt ./
 COPY commands ./commands
 COPY services ./services
+COPY music ./music
 COPY main.py ./
 COPY .env ./
 

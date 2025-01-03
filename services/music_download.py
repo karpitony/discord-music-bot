@@ -4,11 +4,14 @@ import asyncio
 import discord
 import yt_dlp as youtube_dl
 
+if not os.path.exists('music'):
+    os.makedirs('music')
+
 # YouTube 다운로드 및 재생 설정
 youtube_dl.utils.bug_reports_message = lambda: ''
 ytdl_format_options = {
     'format': 'bestaudio/best',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'outtmpl': 'music/%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': True,
     'nocheckcertificate': True,
@@ -77,6 +80,10 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
             # 파일 삭제 시도
             for attempt in range(5):
+                if not os.path.exists(self.filename):  # 파일 존재 여부 확인
+                    print(f"File already deleted: {self.filename}")
+                    break
+
                 if not is_file_in_use(self.filename):
                     try:
                         os.remove(self.filename)
