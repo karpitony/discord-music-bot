@@ -55,9 +55,9 @@ class MusicCommands(commands.Cog):
         if not voice_client or not voice_client.is_playing():
             await interaction.response.send_message("현재 재생 중인 곡이 없습니다.")
             return
-        
-        voice_client.stop()
-        self.music_cog.cleanup_player()
+
+        voice_client.stop()  # 현재 곡 중단
+        await self.music_cog.play_next(voice_client)  # 다음 곡 재생
         await interaction.response.send_message("현재 곡을 건너뛰었습니다.")
 
     @app_commands.command(name="playlist", description="대기열 표시")

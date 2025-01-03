@@ -1,6 +1,6 @@
 import asyncio
 from discord.ext import commands
-from music_download import YTDLSource
+from .music_download import YTDLSource
 
 # Music Cog
 class MusicPlayer(commands.Cog):
